@@ -146,7 +146,7 @@ where
                     .silent
                     .store(gain <= 0.0 && target <= 0.0, Ordering::Release);
             },
-            |err| eprintln!("brownie: audio stream error: {err}"),
+            |err| eprintln!("neaponoise: audio stream error: {err}"),
             None,
         )
         .map_err(|e| format!("could not open output stream: {e}"))

@@ -1,10 +1,10 @@
 [package]
-name = "brownie"
+name = "neaponoise"
 version = "3.0.0"
 edition = "2024"
-description = "A compact brown-noise generator"
+description = "Neapolitan Noise - a compact white, brown and pink noise generator"
 license = "MIT"
-repository = "https://github.com/sbrinkmeyer/brownie-sauce"
+repository = "https://github.com/sbrinkmeyer/neapolitan-noise"
 
 [dependencies]
 # ALSA-only on Linux by design: pipewire and pulseaudio both ship ALSA

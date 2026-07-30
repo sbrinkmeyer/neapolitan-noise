@@ -14,7 +14,9 @@ fn main() -> eframe::Result {
     // never inherits one from the window manager or a restored session.
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Neapolitan Noise")
-        .with_app_id("neapolitan-noise")
+        // Must match the .desktop basename installed by packaging/linux/appimage.sh
+        // (neaponoise.desktop), otherwise Wayland cannot resolve the window icon.
+        .with_app_id("neaponoise")
         .with_inner_size(app::COLLAPSED_SIZE)
         .with_min_inner_size(app::COLLAPSED_SIZE)
         .with_max_inner_size(app::COLLAPSED_SIZE)
@@ -38,9 +40,9 @@ fn main() -> eframe::Result {
     };
 
     // Also names the settings directory, so changing it starts fresh: volume and
-    // flavor reset once on upgrade from a "brownie"-named build.
+    // flavor reset once on upgrade from a build that was still called Brownie.
     eframe::run_native(
-        "NeapoNoise",
+        "NeapolitanNoise",
         options,
         Box::new(|cc| Ok(Box::new(app::NeapoNoise::new(cc)))),
     )

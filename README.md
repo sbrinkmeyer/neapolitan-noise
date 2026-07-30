@@ -1,10 +1,11 @@
-# Brownie 3.0
+# Neapolitan Noise 3.0
 
-A compact brown-noise generator with a thin single-row interface. Native, no
-runtime to install: one self-contained binary per platform.
+Three flavors of noise behind a thin single-row interface: white, brown and pink.
+Native, no runtime to install, one self-contained binary per platform.
 
-Brownie 3.0 is a Rust rewrite (`native/`) of the Electron app that came before
-it. Same filter, same palette, 4 MB instead of 264 MB.
+Neapolitan Noise 3.0 is a Rust rewrite (`native/`) of Brownie, the Electron app
+that came before it. Same brown-noise filter, plus two more scoops — and 4 MB
+instead of 264 MB.
 
 ## Features
 
@@ -33,7 +34,7 @@ button.
 
 ## Downloads
 
-Grab an installer from [Releases](https://github.com/sbrinkmeyer/brownie-sauce/releases):
+Grab an installer from [Releases](https://github.com/sbrinkmeyer/neapolitan-noise/releases):
 
 | Platform | Asset |
 | --- | --- |
@@ -52,7 +53,7 @@ Windows.
 ```bash
 cargo build --release --manifest-path native/Cargo.toml
 cargo test --release --manifest-path native/Cargo.toml
-./native/target/release/brownie
+./native/target/release/neaponoise
 ```
 
 On Linux, install the audio and windowing headers first:
@@ -70,10 +71,10 @@ Locally, for the platform you are on:
 
 ```bash
 # macOS: .app bundle + DMG, named for the architectures it contains
-bash packaging/macos/bundle.sh native/target/release/brownie 3.0.0 dist-native
+bash packaging/macos/bundle.sh native/target/release/neaponoise 3.0.0 dist-native
 
 # Linux: AppImage
-bash packaging/linux/appimage.sh native/target/release/brownie 3.0.0 dist-native
+bash packaging/linux/appimage.sh native/target/release/neaponoise 3.0.0 dist-native
 ```
 
 Cross-compiling these is more trouble than it is worth; CI does it instead.
@@ -141,7 +142,7 @@ After the first successful launch, macOS allows normal double-click opening.
 ### Option 2: Terminal (remove quarantine flag)
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Brownie.app
+xattr -dr com.apple.quarantine "/Applications/Neapolitan Noise.app"
 ```
 
 ## Windows SmartScreen (unsigned build)
