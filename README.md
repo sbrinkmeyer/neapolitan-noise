@@ -106,6 +106,7 @@ A release is created with all artifacts attached. Opening a PR that touches
 - `native/src/palette.rs`: one color scheme per flavor, with contrast tests
 - `native/src/main.rs`: window setup
 - `packaging/`: per-platform bundling scripts, plus the icon pipeline
+- `tutorial.md`: conceptual noise-generation notes
 
 ### Icons
 
@@ -113,18 +114,27 @@ A release is created with all artifacts attached. Opening a PR that touches
 artwork (needs ImageMagick 7):
 
 ```bash
-bash packaging/icons/build-icons.sh packaging/icons/artwork-master.png 0.74
+bash packaging/icons/build-icons.sh packaging/icons/artwork-master.png
 ```
 
 That produces `icon-1024.png` (packaging source), `icon.png` (256, embedded in
 the binary) and a 6-size `icon.ico` for the Windows exe. The macOS `.icns` is
-built in CI from the 1024 at all ten sizes. The second argument crops the
-artwork before masking — generated art usually needs it, or the subject is too
-small to read at 32px.
+built in CI from the 1024 at all ten sizes.
 
 macOS does not round app icons, so the script clips the artwork to a superellipse
-with transparent corners. Skip that and it renders as a hard square in the Dock.
-- `tutorial.md`: conceptual noise-generation notes
+with transparent corners. Skip that and it renders as a hard square in the Dock
+next to every properly masked icon.
+
+An optional second argument crops the artwork before masking, as a fraction of
+its short edge:
+
+```bash
+bash packaging/icons/build-icons.sh some-artwork.png 0.74
+```
+
+Artwork that draws its own tile or leaves wide margins needs this, because those
+margins stack with the icon-grid inset and leave the subject too small to read at
+32px. The current artwork fills its square, so it needs no crop.
 
 ### History
 
