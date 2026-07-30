@@ -107,9 +107,20 @@ A release is created with all artifacts attached. Opening a PR that touches
 - `native/src/main.rs`: window setup
 - `packaging/`: per-platform bundling scripts
 - `tutorial.md`: conceptual noise-generation notes
-- `brownie.py`: the original Python/tkinter prototype
-- `main.js`, `index.html`, `renderer.js`: the Electron 2.0 app, kept for
-  reference. Its workflow (`build-installers.yml`) is now manual-only.
+
+### History
+
+Versions 1 and 2 were a Python/tkinter prototype and an Electron app. Both were
+removed in 3.0 — this is now a Rust-only project. To read them:
+
+```bash
+git show v2.0.0:main.js         # Electron main process
+git show v2.0.0:renderer.js     # audio + UI
+git show v2.0.0:brownie.py      # the original prototype
+```
+
+Their installers are still attached to the
+[v2.0.0 release](https://github.com/sbrinkmeyer/neapolitan-noise/releases/tag/v2.0.0).
 
 ## Notes on the port
 

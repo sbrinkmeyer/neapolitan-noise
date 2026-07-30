@@ -1,19 +1,8 @@
-# Dependencies
-node_modules/
-
-# Build outputs
-dist/
-out/
-release/
-dist-native/
-
 # Rust
 native/target/
 
-# Python local environment (if present)
-venv/
-__pycache__/
-*.pyc
+# Packaging output
+dist-native/
 
 # OS/editor noise
 .DS_Store
@@ -21,13 +10,10 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-*.log
-
 # Environment files
 .env
 .env.*
 !.env.example
+
+# Any local packaging output, at any depth
+dist/
