@@ -1,5 +1,5 @@
 name: Install help (Gatekeeper / launch issues)
-description: Get help launching Brownie on macOS, Windows, or Linux.
+description: Get help launching Neapolitan Noise on macOS, Windows, or Linux.
 title: "Install help: "
 labels:
   - support
@@ -7,16 +7,16 @@ body:
   - type: markdown
     attributes:
       value: |
-        If this is macOS and you see "developer cannot be verified", Brownie is likely unsigned.
+        If this is macOS and you see "developer cannot be verified", Neapolitan Noise is likely unsigned.
 
         Quick fix (trusted builds only):
-        1. Move Brownie.app to Applications.
-        2. In Finder, right-click Brownie.app and choose Open.
+        1. Move "Neapolitan Noise.app" to Applications.
+        2. In Finder, right-click "Neapolitan Noise.app" and choose Open.
         3. Click Open again.
 
         Terminal alternative:
 
-        xattr -dr com.apple.quarantine /Applications/Brownie.app
+        xattr -dr com.apple.quarantine "/Applications/Neapolitan Noise.app"
 
   - type: dropdown
     id: os
@@ -32,9 +32,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: Brownie version
-      description: Example v2.0.0
-      placeholder: v2.0.0
+      label: Neapolitan Noise version
+      description: Example v3.0.0
+      placeholder: v3.0.0
     validations:
       required: true
 
@@ -43,7 +43,7 @@ body:
     attributes:
       label: Exact error message
       description: Paste the full message shown by the OS.
-      placeholder: "Brownie.app can't be opened because Apple cannot check it for malicious software..."
+      placeholder: "\"Neapolitan Noise.app\" can not be opened because Apple cannot check it for malicious software..."
     validations:
       required: true
 

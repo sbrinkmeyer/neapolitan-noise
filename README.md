@@ -1,10 +1,11 @@
-# Brownie 3.0
+# Neapolitan Noise 3.0
 
-A compact brown-noise generator with a thin single-row interface. Native, no
-runtime to install: one self-contained binary per platform.
+Three flavors of noise behind a thin single-row interface: white, brown and pink.
+Native, no runtime to install, one self-contained binary per platform.
 
-Brownie 3.0 is a Rust rewrite (`native/`) of the Electron app that came before
-it. Same filter, same palette, 4 MB instead of 264 MB.
+Neapolitan Noise 3.0 is a Rust rewrite (`native/`) of Brownie, the Electron app
+that came before it. Same brown-noise filter, plus two more scoops — and 4 MB
+instead of 264 MB.
 
 ## Features
 
@@ -33,7 +34,7 @@ button.
 
 ## Downloads
 
-Grab an installer from [Releases](https://github.com/sbrinkmeyer/brownie-sauce/releases):
+Grab an installer from [Releases](https://github.com/sbrinkmeyer/neapolitan-noise/releases):
 
 | Platform | Asset |
 | --- | --- |
@@ -52,7 +53,7 @@ Windows.
 ```bash
 cargo build --release --manifest-path native/Cargo.toml
 cargo test --release --manifest-path native/Cargo.toml
-./native/target/release/brownie
+./native/target/release/neaponoise
 ```
 
 On Linux, install the audio and windowing headers first:
@@ -70,10 +71,10 @@ Locally, for the platform you are on:
 
 ```bash
 # macOS: .app bundle + DMG, named for the architectures it contains
-bash packaging/macos/bundle.sh native/target/release/brownie 3.0.0 dist-native
+bash packaging/macos/bundle.sh native/target/release/neaponoise 3.0.0 dist-native
 
 # Linux: AppImage
-bash packaging/linux/appimage.sh native/target/release/brownie 3.0.0 dist-native
+bash packaging/linux/appimage.sh native/target/release/neaponoise 3.0.0 dist-native
 ```
 
 Cross-compiling these is more trouble than it is worth; CI does it instead.
@@ -106,9 +107,20 @@ A release is created with all artifacts attached. Opening a PR that touches
 - `native/src/main.rs`: window setup
 - `packaging/`: per-platform bundling scripts
 - `tutorial.md`: conceptual noise-generation notes
-- `brownie.py`: the original Python/tkinter prototype
-- `main.js`, `index.html`, `renderer.js`: the Electron 2.0 app, kept for
-  reference. Its workflow (`build-installers.yml`) is now manual-only.
+
+### History
+
+Versions 1 and 2 were a Python/tkinter prototype and an Electron app. Both were
+removed in 3.0 — this is now a Rust-only project. To read them:
+
+```bash
+git show v2.0.0:main.js         # Electron main process
+git show v2.0.0:renderer.js     # audio + UI
+git show v2.0.0:brownie.py      # the original prototype
+```
+
+Their installers are still attached to the
+[v2.0.0 release](https://github.com/sbrinkmeyer/neapolitan-noise/releases/tag/v2.0.0).
 
 ## Notes on the port
 
@@ -141,7 +153,7 @@ After the first successful launch, macOS allows normal double-click opening.
 ### Option 2: Terminal (remove quarantine flag)
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Brownie.app
+xattr -dr com.apple.quarantine "/Applications/Neapolitan Noise.app"
 ```
 
 ## Windows SmartScreen (unsigned build)

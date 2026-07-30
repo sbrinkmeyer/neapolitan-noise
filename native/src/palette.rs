@@ -32,7 +32,8 @@ const fn rgb(hex: u32) -> Color32 {
     )
 }
 
-/// The original Brownie scheme.
+/// The original scheme, inherited from the Electron app back when this was
+/// called Brownie and only made brown noise.
 pub const CHOCOLATE: Palette = Palette {
     bg: rgb(0x1a1008),
     text: rgb(0xd4a96a),

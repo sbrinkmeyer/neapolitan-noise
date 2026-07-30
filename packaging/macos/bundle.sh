@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble Brownie.app from a built binary and wrap it in a DMG.
+# Assemble "Neapolitan Noise.app" from a built binary and wrap it in a DMG.
 #
 # Usage: bundle.sh <binary> <version> <output-dir>
 #
@@ -13,14 +13,24 @@ OUT_DIR="${3:?missing output dir}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ICON_SOURCE="$REPO_ROOT/native/assets/icon-1024.png"
 
+# Display name has a space; the executable inside the bundle does not.
+APP_NAME="Neapolitan Noise"
+EXECUTABLE="neaponoise"
+# Reverse-DNS of a domain actually owned, which is the convention and keeps the ID
+# globally unique. Worth getting right now: changing it later makes macOS treat
+# this as a different app, with fresh Gatekeeper approval and settings.
+BUNDLE_ID="me.scottbrinkmeyer.neapolitan-noise"
+# Hyphens rather than spaces in artifact filenames, so download URLs stay clean.
+FILE_STEM="Neapolitan-Noise"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-APP="$WORK/Brownie.app"
+APP="$WORK/$APP_NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-cp "$BINARY" "$APP/Contents/MacOS/brownie"
-chmod +x "$APP/Contents/MacOS/brownie"
+cp "$BINARY" "$APP/Contents/MacOS/$EXECUTABLE"
+chmod +x "$APP/Contents/MacOS/$EXECUTABLE"
 
 # --- icon ---------------------------------------------------------------------
 ICONSET="$WORK/icon.iconset"
@@ -40,10 +50,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Brownie</string>
-  <key>CFBundleDisplayName</key><string>Brownie</string>
-  <key>CFBundleIdentifier</key><string>com.brownie.app</string>
-  <key>CFBundleExecutable</key><string>brownie</string>
+  <key>CFBundleName</key><string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+  <key>CFBundleExecutable</key><string>$EXECUTABLE</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -61,7 +71,7 @@ PLIST
 # linker puts on each slice, and macOS refuses to run an unsigned arm64 binary.
 # This is not notarization; Gatekeeper still warns on first open.
 codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 \
-  || codesign --force --sign - "$APP/Contents/MacOS/brownie"
+  || codesign --force --sign - "$APP/Contents/MacOS/$EXECUTABLE"
 codesign --verify --deep --strict "$APP"
 
 # --- dmg ----------------------------------------------------------------------
@@ -74,20 +84,20 @@ mkdir -p "$OUT_DIR"
 
 # Name the DMG after what is actually inside it, so a local single-arch build
 # is not mislabelled as universal.
-case "$(lipo -archs "$APP/Contents/MacOS/brownie")" in
+case "$(lipo -archs "$APP/Contents/MacOS/$EXECUTABLE")" in
   *arm64*x86_64*|*x86_64*arm64*) ARCH_LABEL="universal" ;;
   *arm64*)                       ARCH_LABEL="arm64" ;;
   *x86_64*)                      ARCH_LABEL="x64" ;;
   *)                             ARCH_LABEL="unknown" ;;
 esac
 
-DMG="$OUT_DIR/Brownie-$VERSION-macos-$ARCH_LABEL.dmg"
+DMG="$OUT_DIR/$FILE_STEM-$VERSION-macos-$ARCH_LABEL.dmg"
 rm -f "$DMG"
 hdiutil create \
-  -volname "Brownie" \
+  -volname "$APP_NAME" \
   -srcfolder "$STAGING" \
   -ov -format UDZO \
   "$DMG" >/dev/null
 
 echo "built $DMG"
-lipo -archs "$APP/Contents/MacOS/brownie"
+lipo -archs "$APP/Contents/MacOS/$EXECUTABLE"
