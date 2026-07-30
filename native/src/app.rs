@@ -29,6 +29,9 @@ const MODE_BUTTON_SIZE: egui::Vec2 = egui::vec2(62.0, 26.0);
 const HELP_BUTTON_SIZE: egui::Vec2 = egui::vec2(26.0, 26.0);
 const BADGE_SIZE: egui::Vec2 = egui::vec2(42.0, 26.0);
 const PICKER_SIZE: egui::Vec2 = egui::vec2(22.0, 26.0);
+/// How far the unselected scoops pull back from the edges. This is the selection
+/// cue, chosen over dimming so the three band colors stay static.
+const UNSELECTED_INSET: f32 = 4.0;
 
 /// Window size with the help panel closed and open. The help panel lives in the
 /// same window rather than a second one, so the app stays a single tiny thing.
@@ -57,24 +60,40 @@ const FLAVOR_BLURBS: [(Flavor, &str); 3] = [
     (Flavor::Strawberry, "halfway there. rain on a tent"),
 ];
 
-/// Left column is rendered in the monospace family, whose first font (Hack) is
-/// the only bundled one carrying the arrow glyphs.
-const KEY_HELP: [(&str, &str); 9] = [
-    ("Tab", "walk the controls, left to right"),
-    ("↑ ↓  on the scoops", "change flavor"),
-    ("Space / Enter", "flip whichever button is focused"),
-    ("← →  on the slider", "nudge the volume by one"),
-    ("Scroll wheel", "the same, but lazier"),
-    ("↑ ↓  on the number", "nudge the volume by one"),
-    ("Click the number", "type an exact 0–99"),
-    ("mono", "both ears get the same rumble"),
-    ("stereo", "each ear gets its own private rumble"),
+/// Which arrows to draw before a key's label. Drawn as triangles rather than set
+/// as text: none of the bundled fonts actually render U+2190..93, and egui never
+/// falls back to an OS font, so an arrow character is a guaranteed tofu box.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Arrows {
+    None,
+    UpDown,
+    LeftRight,
+}
+
+const KEY_HELP: [(Arrows, &str, &str); 9] = [
+    (Arrows::None, "Tab", "walk the controls, left to right"),
+    (Arrows::UpDown, "on the scoops", "change flavor"),
+    (
+        Arrows::None,
+        "Space / Enter",
+        "flip whichever button is focused",
+    ),
+    (Arrows::LeftRight, "on the slider", "nudge the volume by one"),
+    (Arrows::None, "Scroll wheel", "the same, but lazier"),
+    (Arrows::UpDown, "on the number", "nudge the volume by one"),
+    (Arrows::None, "Click the number", "type an exact 0–99"),
+    (Arrows::None, "mono", "both ears get the same rumble"),
+    (
+        Arrows::None,
+        "stereo",
+        "each ear gets its own private rumble",
+    ),
 ];
 
-/// Non-ASCII codepoints verified present in the bundled fonts: arrows from
-/// Hack-Regular, dashes from Ubuntu-Light. Anything else renders as a tofu box.
+/// Non-ASCII codepoints verified to render in the bundled fonts. Only the dashes
+/// from Ubuntu-Light qualify; arrows are painted, not typed.
 #[cfg(test)]
-const SAFE_NON_ASCII: &[char] = &['←', '↑', '→', '↓', '–', '—'];
+const SAFE_NON_ASCII: &[char] = &['–', '—'];
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Settings {
@@ -96,7 +115,7 @@ impl Default for Settings {
     }
 }
 
-pub struct Brownie {
+pub struct NeapoNoise {
     params: Arc<Params>,
     /// `None` when stopped. cpal streams are not `Send`, and eframe runs the app
     /// on one thread, so holding it here is fine.
@@ -115,7 +134,7 @@ pub struct Brownie {
     error: Option<String>,
 }
 
-impl Brownie {
+impl NeapoNoise {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let stored: Settings = cc
             .storage
@@ -127,7 +146,7 @@ impl Brownie {
             flavor: stored.flavor,
         };
 
-        install_fonts(&cc.egui_ctx);
+        
 
         Self {
             params: Arc::new(Params::new(
@@ -235,20 +254,44 @@ fn gain_for(volume: u32) -> f32 {
     volume as f32 / 100.0
 }
 
-/// Append Hack to the proportional family as a fallback.
+/// Draw a small solid triangle pointing `direction`.
 ///
-/// egui bundles its own fonts and never consults the OS, so the glyph set is
-/// fixed at compile time. The proportional family is
-/// [Ubuntu-Light, NotoEmoji, emoji-icon-font], and none of those carry U+2190..93
-/// — arrows in proportional text render as tofu boxes. Hack does carry them and
-/// is already embedded, so adding it as a last resort costs nothing and makes
-/// arrows work in any text style.
-fn install_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-        family.push("Hack".to_owned());
+/// The help panel needs arrow symbols and no bundled font provides them, so they
+/// are painted. Crisp at any DPI, identical on every platform, no font involved.
+fn arrow_glyph(ui: &mut egui::Ui, direction: egui::Direction, color: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, 11.0), egui::Sense::hover());
+    if !ui.is_rect_visible(rect) {
+        return;
     }
-    ctx.set_fonts(fonts);
+
+    let c = rect.center();
+    // Half-extents: across the point, and from base to tip.
+    let (across, depth) = (4.0, 3.5);
+    let points = match direction {
+        egui::Direction::TopDown => vec![
+            egui::pos2(c.x, c.y + depth),
+            egui::pos2(c.x - across, c.y - depth),
+            egui::pos2(c.x + across, c.y - depth),
+        ],
+        egui::Direction::BottomUp => vec![
+            egui::pos2(c.x, c.y - depth),
+            egui::pos2(c.x - across, c.y + depth),
+            egui::pos2(c.x + across, c.y + depth),
+        ],
+        egui::Direction::RightToLeft => vec![
+            egui::pos2(c.x - depth, c.y),
+            egui::pos2(c.x + depth, c.y - across),
+            egui::pos2(c.x + depth, c.y + across),
+        ],
+        egui::Direction::LeftToRight => vec![
+            egui::pos2(c.x + depth, c.y),
+            egui::pos2(c.x - depth, c.y - across),
+            egui::pos2(c.x - depth, c.y + across),
+        ],
+    };
+
+    ui.painter()
+        .add(egui::Shape::convex_polygon(points, color, egui::Stroke::NONE));
 }
 
 fn apply_theme(ctx: &egui::Context, p: &Palette) {
@@ -341,21 +384,21 @@ fn flavor_picker(ui: &mut egui::Ui, p: &Palette, selected: Flavor) -> (egui::Res
 
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
+
+        // Selection is shown by width, not brightness: the chosen scoop spans the
+        // full stack while the others are inset. Colors stay exactly as mixed, so
+        // the active flavor's band melts into its background instead of muddying.
         for (index, flavor) in FLAVOR_STACK.iter().enumerate() {
+            let inset = if *flavor == selected { 0.0 } else { UNSELECTED_INSET };
             let band = egui::Rect::from_min_size(
-                egui::pos2(rect.left(), rect.top() + band_height * index as f32),
-                egui::vec2(rect.width(), band_height),
+                egui::pos2(rect.left() + inset, rect.top() + band_height * index as f32),
+                egui::vec2(rect.width() - inset * 2.0, band_height),
             );
-            let is_selected = *flavor == selected;
-            let mut color = palette::band_color(*flavor);
-            if !is_selected {
-                // Unselected scoops sit back rather than disappearing.
-                color = color.gamma_multiply(0.45);
-            }
-            painter.rect_filled(band, 0.0, color);
+            painter.rect_filled(band, 0.0, palette::band_color(*flavor));
         }
 
-        // Outer frame, plus a brighter ring when focused so the Tab stop is visible.
+        // Frame in the scheme's own border color, so the stack sits in the window
+        // rather than on top of it. Brighter when focused, to show the Tab stop.
         let stroke = if response.has_focus() {
             egui::Stroke::new(2.0, p.lit_border)
         } else {
@@ -363,24 +406,8 @@ fn flavor_picker(ui: &mut egui::Ui, p: &Palette, selected: Flavor) -> (egui::Res
         };
         painter.rect_stroke(
             rect,
-            egui::CornerRadius::same(4),
+            egui::CornerRadius::same(3),
             stroke,
-            egui::StrokeKind::Inside,
-        );
-
-        // Marker on the selected band.
-        let index = FLAVOR_STACK
-            .iter()
-            .position(|f| *f == selected)
-            .unwrap_or(0);
-        let band = egui::Rect::from_min_size(
-            egui::pos2(rect.left(), rect.top() + band_height * index as f32),
-            egui::vec2(rect.width(), band_height),
-        );
-        painter.rect_stroke(
-            band,
-            egui::CornerRadius::ZERO,
-            egui::Stroke::new(1.5, p.accent),
             egui::StrokeKind::Inside,
         );
     }
@@ -404,7 +431,7 @@ fn flavor_picker(ui: &mut egui::Ui, p: &Palette, selected: Flavor) -> (egui::Res
     (response, steps)
 }
 
-impl eframe::App for Brownie {
+impl eframe::App for NeapoNoise {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.themed != Some(self.settings.flavor) {
             self.themed = Some(self.settings.flavor);
@@ -640,15 +667,28 @@ fn help_contents(ui: &mut egui::Ui, p: &Palette) {
         .num_columns(2)
         .spacing(egui::vec2(12.0, 3.0))
         .show(ui, |ui| {
-            for (keys, what) in KEY_HELP {
-                // Monospace: keycaps line up, and Hack is the bundled font that
-                // actually carries the arrow glyphs.
-                ui.label(
-                    egui::RichText::new(keys)
-                        .size(11.0)
-                        .monospace()
-                        .color(p.badge_text),
-                );
+            for (arrows, keys, what) in KEY_HELP {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    match arrows {
+                        Arrows::UpDown => {
+                            arrow_glyph(ui, egui::Direction::BottomUp, p.badge_text);
+                            arrow_glyph(ui, egui::Direction::TopDown, p.badge_text);
+                        }
+                        Arrows::LeftRight => {
+                            arrow_glyph(ui, egui::Direction::RightToLeft, p.badge_text);
+                            arrow_glyph(ui, egui::Direction::LeftToRight, p.badge_text);
+                        }
+                        Arrows::None => {}
+                    }
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(keys)
+                            .size(11.0)
+                            .strong()
+                            .color(p.badge_text),
+                    );
+                });
                 ui.label(egui::RichText::new(what).size(11.0));
                 ui.end_row();
             }
@@ -674,7 +714,7 @@ mod tests {
     fn help_copy_uses_available_glyphs() {
         let mut copy: Vec<&str> = vec![HELP_TITLE, HELP_BLURB, HELP_FOOTER];
         copy.extend(FLAVOR_BLURBS.iter().map(|(_, blurb)| *blurb));
-        for (keys, what) in KEY_HELP {
+        for (_, keys, what) in KEY_HELP {
             copy.push(keys);
             copy.push(what);
         }

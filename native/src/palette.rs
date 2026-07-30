@@ -100,13 +100,17 @@ pub fn for_flavor(flavor: Flavor) -> &'static Palette {
     }
 }
 
-/// The color of a flavor's band in the picker, independent of the active scheme
-/// so the stack always reads as chocolate / vanilla / strawberry.
+/// The color of a flavor's band in the picker.
+///
+/// Three fixed colors, never tinted or dimmed by the active scheme. Whichever
+/// band matches the current background melts into it, which is the point; dimming
+/// the other two to show selection turned all three into the same mud on the
+/// chocolate scheme, so selection is shown by shape instead (see `flavor_picker`).
 pub fn band_color(flavor: Flavor) -> Color32 {
     match flavor {
-        Flavor::Vanilla => rgb(0xf3e3bf),
-        Flavor::Chocolate => rgb(0x6b4020),
-        Flavor::Strawberry => rgb(0xe79aa6),
+        Flavor::Chocolate => rgb(0x7a4a26),
+        Flavor::Vanilla => rgb(0xf7ecc9),
+        Flavor::Strawberry => rgb(0xf2a5b2),
     }
 }
 

@@ -10,11 +10,11 @@ use eframe::egui;
 
 fn main() -> eframe::Result {
     // Pin the size hard. Opening the help panel moves all three clamps together
-    // (see `Brownie::toggle_help`), so the window is exactly one of two sizes and
+    // (see `NeapoNoise::toggle_help`), so the window is exactly one of two sizes and
     // never inherits one from the window manager or a restored session.
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Brownie")
-        .with_app_id("brownie")
+        .with_title("Neapolitan Noise")
+        .with_app_id("neapolitan-noise")
         .with_inner_size(app::COLLAPSED_SIZE)
         .with_min_inner_size(app::COLLAPSED_SIZE)
         .with_max_inner_size(app::COLLAPSED_SIZE)
@@ -37,9 +37,11 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
 
+    // Also names the settings directory, so changing it starts fresh: volume and
+    // flavor reset once on upgrade from a "brownie"-named build.
     eframe::run_native(
-        "brownie",
+        "NeapoNoise",
         options,
-        Box::new(|cc| Ok(Box::new(app::Brownie::new(cc)))),
+        Box::new(|cc| Ok(Box::new(app::NeapoNoise::new(cc)))),
     )
 }
