@@ -1,0 +1,43 @@
+[package]
+name = "brownie"
+version = "3.0.0"
+edition = "2024"
+description = "A compact brown-noise generator"
+license = "MIT"
+repository = "https://github.com/sbrinkmeyer/brownie-sauce"
+
+[dependencies]
+# ALSA-only on Linux by design: pipewire and pulseaudio both ship ALSA
+# compatibility layers, so the default backend reaches every desktop without
+# dragging extra build-time dependencies into CI.
+cpal = "0.18.1"
+
+# glow (OpenGL) instead of the default wgpu backend: smaller binary, and it runs
+# on Linux boxes with no Vulkan driver. wayland + x11 are re-added by hand since
+# default-features = false drops them.
+eframe = { version = "0.35.0", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "persistence",
+    "wayland",
+    "x11",
+] }
+
+# Direct dependency purely to pull in winit's default features, which eframe's
+# own `default` set would otherwise have given us. The one that matters is
+# wayland-dlopen: without it the binary hard-links libwayland-client and fails
+# to start on X11-only systems, which would break the AppImage.
+winit = "0.30.13"
+
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

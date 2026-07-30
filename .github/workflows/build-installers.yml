@@ -1,5 +1,7 @@
-name: Build Installers
+name: Build Installers (Electron, legacy)
 
+# Manual only. `v*` tags now belong to native-release.yml, which builds the Rust
+# app in native/; leaving the tag trigger here would double-publish every release.
 on:
   workflow_dispatch:
     inputs:
@@ -12,9 +14,6 @@ on:
         description: "Tag for release"
         required: false
         type: string
-  push:
-    tags:
-      - 'v*'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
