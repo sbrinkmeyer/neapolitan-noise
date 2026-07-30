@@ -198,8 +198,61 @@ jobs:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
-          set -euo pipefail
+          # No `set -e`. Publishing talks to a network API that returns transient
+          # 5xx, and aborting on the first one strands a tagged release with no
+          # assets. Every step below checks its own outcome and retries what is
+          # worth retrying.
+
+          # --- preconditions --------------------------------------------------
+          # Name what is missing rather than letting a glob quietly expand to
+          # nothing and "succeed".
+          missing=0
+          for pattern in \
+            "release-assets/Neapolitan-Noise-*-macos-*.dmg" \
+            "release-assets/Neapolitan-Noise-*-windows-x64.exe" \
+            "release-assets/Neapolitan-Noise-*-linux-x86_64.AppImage"; do
+            # shellcheck disable=SC2086
+            if ! compgen -G "$pattern" >/dev/null; then
+              echo "::error::no artifact matching $pattern"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Artifacts present:"; ls -lhR release-assets || true
+            exit 1
+          fi
+
+          for f in release-assets/*; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f is empty"
+              exit 1
+            fi
+          done
           ls -lh release-assets
+
+          # --- retry helper ---------------------------------------------------
+          # GitHub's releases API 502s often enough to matter. Retry with backoff
+          # and surface the output of every attempt.
+          retry() {
+            local what="$1"; shift
+            local attempt=1 max=5 delay=5 output status
+            while :; do
+              output="$("$@" 2>&1)"; status=$?
+              if [ "$status" -eq 0 ]; then
+                [ -n "$output" ] && echo "$output"
+                return 0
+              fi
+              echo "$output"
+              if [ "$attempt" -ge "$max" ]; then
+                echo "::error::$what failed after $max attempts"
+                return "$status"
+              fi
+              echo "$what failed (attempt $attempt/$max, exit $status); retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
 
           cat > release-notes.md <<'EOF'
           Native builds — no runtime to install, one self-contained binary per platform.
@@ -235,15 +288,59 @@ jobs:
               chmod +x Neapolitan-Noise-*.AppImage && ./Neapolitan-Noise-*.AppImage
           EOF
 
+          # --- publish --------------------------------------------------------
+          # A 502 can still create the release server-side before the response
+          # fails, so decide create-vs-update from the API, not from whether an
+          # earlier attempt reported success. That also makes a re-run safe.
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/* --clobber
-            gh release edit "$RELEASE_TAG" \
+            echo "release $RELEASE_TAG already exists; updating it"
+            retry "release edit" gh release edit "$RELEASE_TAG" \
               --title "Neapolitan Noise $RELEASE_TAG" \
               --target "$RELEASE_SHA" \
-              --notes-file release-notes.md
+              --notes-file release-notes.md || exit 1
           else
-            gh release create "$RELEASE_TAG" release-assets/* \
+            echo "creating release $RELEASE_TAG"
+            if ! retry "release create" gh release create "$RELEASE_TAG" \
               --target "$RELEASE_SHA" \
               --title "Neapolitan Noise $RELEASE_TAG" \
-              --notes-file release-notes.md
+              --notes-file release-notes.md; then
+              # Last check before giving up: the create may have landed even
+              # though every response looked like a failure.
+              gh release view "$RELEASE_TAG" >/dev/null 2>&1 || exit 1
+              echo "create reported failure but the release exists; continuing"
+            fi
           fi
+
+          # Upload separately from create so a partial upload can be re-driven
+          # without recreating anything. --clobber makes it idempotent.
+          upload_failed=0
+          for asset in release-assets/*; do
+            retry "upload $(basename "$asset")" \
+              gh release upload "$RELEASE_TAG" "$asset" --clobber || upload_failed=1
+          done
+
+          # --- verify ---------------------------------------------------------
+          # Confirm what is actually attached, rather than trusting exit codes.
+          echo "verifying attached assets"
+          attached="$(gh release view "$RELEASE_TAG" --json assets \
+            --jq '.assets[] | "\(.name) \(.size)"' 2>/dev/null)"
+          echo "$attached"
+
+          expected=$(ls -1 release-assets | wc -l | tr -d ' ')
+          actual=$(printf '%s\n' "$attached" | grep -c . || true)
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error::expected $expected assets attached, found $actual"
+            exit 1
+          fi
+          if printf '%s\n' "$attached" | awk '$2 == 0 { exit 1 }'; then
+            :
+          else
+            echo "::error::at least one attached asset has size 0"
+            exit 1
+          fi
+          if [ "$upload_failed" -ne 0 ]; then
+            echo "::error::an upload reported failure; assets verified but review the log"
+            exit 1
+          fi
+
+          echo "published $RELEASE_TAG with $actual assets"
