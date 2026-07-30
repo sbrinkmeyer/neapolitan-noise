@@ -2,12 +2,12 @@
 //! macOS, WASAPI on Windows, ALSA on Linux.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
-use crate::noise::BrownNoise;
+use crate::noise::{Flavor, NoiseChannel};
 
 /// Time to glide between gain targets. Removes the zipper noise the WebAudio
 /// version had when dragging the slider, and the click on start/stop.
@@ -18,18 +18,29 @@ pub struct Params {
     /// `f32` bits — atomics have no float variant.
     target_gain: AtomicU32,
     stereo: AtomicBool,
+    /// [`Flavor`] as `u8`; see `Flavor::to_u8`.
+    flavor: AtomicU8,
     /// Set by the callback once the ramp has actually reached zero, so the UI
     /// knows it is safe to drop the stream without a click.
     silent: AtomicBool,
 }
 
 impl Params {
-    pub fn new(gain: f32, stereo: bool) -> Self {
+    pub fn new(gain: f32, stereo: bool, flavor: Flavor) -> Self {
         Self {
             target_gain: AtomicU32::new(gain.to_bits()),
             stereo: AtomicBool::new(stereo),
+            flavor: AtomicU8::new(flavor.to_u8()),
             silent: AtomicBool::new(true),
         }
+    }
+
+    pub fn set_flavor(&self, flavor: Flavor) {
+        self.flavor.store(flavor.to_u8(), Ordering::Relaxed);
+    }
+
+    pub fn flavor(&self) -> Flavor {
+        Flavor::from_u8(self.flavor.load(Ordering::Relaxed))
     }
 
     pub fn set_gain(&self, gain: f32) {
@@ -94,8 +105,8 @@ where
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate as f32;
 
-    let mut left = BrownNoise::new(sample_rate, 0x1234_5678);
-    let mut right = BrownNoise::new(sample_rate, 0x9ABC_DEF1);
+    let mut left = NoiseChannel::new(sample_rate, 0x1234_5678);
+    let mut right = NoiseChannel::new(sample_rate, 0x9ABC_DEF1);
 
     // Always fade up from silence so opening the stream cannot click.
     let mut gain = 0.0f32;
@@ -107,6 +118,9 @@ where
             move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                 let target = params.gain();
                 let stereo = params.stereo();
+                // Read once per buffer, not per sample: a flavor change lands on a
+                // buffer boundary, which for a noise signal is inaudible.
+                let flavor = params.flavor();
 
                 for frame in data.chunks_mut(channels) {
                     if gain < target {
@@ -115,10 +129,10 @@ where
                         gain = (gain - step).max(target);
                     }
 
-                    let l = left.next_sample() * gain;
+                    let l = left.next_sample(flavor) * gain;
                     // Mono is dual-mono, matching the original's `right.set(left)`.
                     let r = if stereo {
-                        right.next_sample() * gain
+                        right.next_sample(flavor) * gain
                     } else {
                         l
                     };

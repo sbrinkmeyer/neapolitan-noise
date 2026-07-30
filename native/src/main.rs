@@ -4,6 +4,7 @@
 mod app;
 mod audio;
 mod noise;
+mod palette;
 
 use eframe::egui;
 

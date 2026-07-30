@@ -8,6 +8,12 @@ it. Same filter, same palette, 4 MB instead of 264 MB.
 
 ## Features
 
+- Neapolitan flavor picker: three stacked scoops, chocolate on top
+  - chocolate: brown noise, -6 dB/octave. The original Brownie sound
+  - vanilla: white noise, flat spectrum
+  - strawberry: pink noise, -3 dB/octave
+  - Click a scoop, or focus the stack and use Up/Down. The whole palette swaps
+    to match the flavor
 - Stereo/Mono mode button
   - Lit: stereo (independent L/R channels)
   - Dim: mono (dual-mono output)
@@ -93,9 +99,10 @@ A release is created with all artifacts attached. Opening a PR that touches
 
 ## Project structure
 
-- `native/src/noise.rs`: brown-noise DSP, with tests
+- `native/src/noise.rs`: white/brown/pink DSP, with tests
 - `native/src/audio.rs`: cpal output stream, gain ramping
-- `native/src/app.rs`: UI, theme, persistence
+- `native/src/app.rs`: UI, flavor picker, persistence
+- `native/src/palette.rs`: one color scheme per flavor, with contrast tests
 - `native/src/main.rs`: window setup
 - `packaging/`: per-platform bundling scripts
 - `tutorial.md`: conceptual noise-generation notes

@@ -1,15 +1,18 @@
-//! UI: one row — mode toggle, volume slider, volume entry, playback toggle,
-//! help. Mirrors the layout and palette of the Electron build's `index.html`.
+//! UI: one row — flavor picker, mode toggle, volume slider, volume entry,
+//! playback toggle, help. Mirrors the layout of the Electron build's
+//! `index.html`, with the palette now driven by the selected flavor.
 //!
-//! Keyboard: Tab walks the controls in that order. Space/Enter activate the
-//! focused button, Left/Right move a focused slider, and Up/Down step a focused
-//! number entry — all of it egui's built-in behavior.
+//! Keyboard: Tab walks the controls left to right. Space/Enter activate the
+//! focused button, Up/Down move through the flavor stack or step the number
+//! entry, and Left/Right move a focused slider.
 
 use std::sync::Arc;
 
 use eframe::egui;
 
 use crate::audio::{self, Params};
+use crate::noise::Flavor;
+use crate::palette::{self, Palette};
 
 /// Scroll distance that steps the volume by one, so a wheel notch moves 1 the
 /// way it did in the browser build without trackpad inertia running away.
@@ -18,37 +21,69 @@ const SCROLL_PER_STEP: f32 = 20.0;
 const VOLUME_MIN: u32 = 0;
 const VOLUME_MAX: u32 = 99;
 
-const BG: egui::Color32 = egui::Color32::from_rgb(0x1a, 0x10, 0x08);
-const TEXT: egui::Color32 = egui::Color32::from_rgb(0xd4, 0xa9, 0x6a);
-const BTN_BG: egui::Color32 = egui::Color32::from_rgb(0x37, 0x20, 0x12);
-const BTN_BORDER: egui::Color32 = egui::Color32::from_rgb(0x6b, 0x3a, 0x1f);
-const BTN_TEXT: egui::Color32 = egui::Color32::from_rgb(0xc6, 0x98, 0x5d);
-const BTN_HOVER: egui::Color32 = egui::Color32::from_rgb(0x7d, 0x45, 0x25);
-const BTN_PRESSED: egui::Color32 = egui::Color32::from_rgb(0x5a, 0x2f, 0x18);
-const LIT_BG: egui::Color32 = egui::Color32::from_rgb(0x8a, 0x4d, 0x27);
-const LIT_BORDER: egui::Color32 = egui::Color32::from_rgb(0xa0, 0x62, 0x2a);
-const LIT_TEXT: egui::Color32 = egui::Color32::from_rgb(0xff, 0xe1, 0xba);
-const TROUGH: egui::Color32 = egui::Color32::from_rgb(0x26, 0x17, 0x0c);
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(0xa0, 0x62, 0x2a);
-const BADGE_BG: egui::Color32 = egui::Color32::from_rgb(0x12, 0x0b, 0x05);
-const BADGE_BORDER: egui::Color32 = egui::Color32::from_rgb(0x7b, 0x4d, 0x2a);
-const BADGE_TEXT: egui::Color32 = egui::Color32::from_rgb(0xf0, 0xd0, 0xa0);
-const ERROR_TEXT: egui::Color32 = egui::Color32::from_rgb(0xff, 0x8a, 0x6a);
+/// Top-to-bottom order of the picker, like the bands in Neapolitan ice cream.
+const FLAVOR_STACK: [Flavor; 3] = [Flavor::Chocolate, Flavor::Vanilla, Flavor::Strawberry];
 
 const PLAY_BUTTON_SIZE: egui::Vec2 = egui::vec2(52.0, 26.0);
 const MODE_BUTTON_SIZE: egui::Vec2 = egui::vec2(62.0, 26.0);
 const HELP_BUTTON_SIZE: egui::Vec2 = egui::vec2(26.0, 26.0);
 const BADGE_SIZE: egui::Vec2 = egui::vec2(42.0, 26.0);
+const PICKER_SIZE: egui::Vec2 = egui::vec2(22.0, 26.0);
 
 /// Window size with the help panel closed and open. The help panel lives in the
 /// same window rather than a second one, so the app stays a single tiny thing.
-pub const COLLAPSED_SIZE: egui::Vec2 = egui::vec2(400.0, 46.0);
-pub const EXPANDED_SIZE: egui::Vec2 = egui::vec2(400.0, 292.0);
+pub const COLLAPSED_SIZE: egui::Vec2 = egui::vec2(436.0, 46.0);
+pub const EXPANDED_SIZE: egui::Vec2 = egui::vec2(436.0, 320.0);
+
+/// Scroll step per key press in the help panel, in points.
+const HELP_KEY_SCROLL: f32 = 24.0;
+const HELP_PAGE_SCROLL: f32 = 120.0;
+
+// Help copy lives in consts so `help_copy_uses_available_glyphs` can guard it.
+// egui bundles its own fonts and never touches OS fonts, so the only glyphs that
+// exist are the ones in those four files — see SAFE_NON_ASCII.
+const HELP_TITLE: &str = "Neapolitan noise.";
+const HELP_BLURB: &str = "Three scoops. Pairs well with noise-cancelling headphones. Push \
+                          buttons, makes noise, either up or down. Minimal system usage — \
+                          your fans will never find out.";
+const HELP_FOOTER: &str = "Not a medical device. Will not cancel your coworkers.";
+
+const FLAVOR_BLURBS: [(Flavor, &str); 3] = [
+    (Flavor::Chocolate, "the original. deep, rumbly, distant surf"),
+    (
+        Flavor::Vanilla,
+        "bright and hissy. all frequencies, no favorites",
+    ),
+    (Flavor::Strawberry, "halfway there. rain on a tent"),
+];
+
+/// Left column is rendered in the monospace family, whose first font (Hack) is
+/// the only bundled one carrying the arrow glyphs.
+const KEY_HELP: [(&str, &str); 9] = [
+    ("Tab", "walk the controls, left to right"),
+    ("↑ ↓  on the scoops", "change flavor"),
+    ("Space / Enter", "flip whichever button is focused"),
+    ("← →  on the slider", "nudge the volume by one"),
+    ("Scroll wheel", "the same, but lazier"),
+    ("↑ ↓  on the number", "nudge the volume by one"),
+    ("Click the number", "type an exact 0–99"),
+    ("mono", "both ears get the same rumble"),
+    ("stereo", "each ear gets its own private rumble"),
+];
+
+/// Non-ASCII codepoints verified present in the bundled fonts: arrows from
+/// Hack-Regular, dashes from Ubuntu-Light. Anything else renders as a tofu box.
+#[cfg(test)]
+const SAFE_NON_ASCII: &[char] = &['←', '↑', '→', '↓', '–', '—'];
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Settings {
     pub volume: u32,
     pub stereo: bool,
+    /// `serde(default)` so state written before flavors existed still loads
+    /// instead of silently resetting volume and mono/stereo.
+    #[serde(default)]
+    pub flavor: Flavor,
 }
 
 impl Default for Settings {
@@ -56,6 +91,7 @@ impl Default for Settings {
         Self {
             volume: 30,
             stereo: false,
+            flavor: Flavor::default(),
         }
     }
 }
@@ -72,6 +108,9 @@ pub struct Brownie {
     help_open: bool,
     /// Whether the window size has been asserted yet (first frame).
     sized: bool,
+    /// Flavor the current egui style was built for, so the theme is only rebuilt
+    /// when it actually changes.
+    themed: Option<Flavor>,
     scroll_accum: f32,
     error: Option<String>,
 }
@@ -85,26 +124,37 @@ impl Brownie {
         let settings = Settings {
             volume: stored.volume.clamp(VOLUME_MIN, VOLUME_MAX),
             stereo: stored.stereo,
+            flavor: stored.flavor,
         };
 
-        apply_theme(&cc.egui_ctx);
+        install_fonts(&cc.egui_ctx);
 
         Self {
-            params: Arc::new(Params::new(gain_for(settings.volume), settings.stereo)),
+            params: Arc::new(Params::new(
+                gain_for(settings.volume),
+                settings.stereo,
+                settings.flavor,
+            )),
             stream: None,
             settings,
             playing: false,
             stopping: false,
             help_open: false,
             sized: false,
+            themed: None,
             scroll_accum: 0.0,
             error: None,
         }
     }
 
+    fn palette(&self) -> &'static Palette {
+        palette::for_flavor(self.settings.flavor)
+    }
+
     fn start(&mut self) {
         self.params.set_gain(gain_for(self.settings.volume));
         self.params.set_stereo(self.settings.stereo);
+        self.params.set_flavor(self.settings.flavor);
         self.stopping = false;
 
         match audio::start(Arc::clone(&self.params)) {
@@ -126,6 +176,28 @@ impl Brownie {
         self.params.set_gain(0.0);
         self.playing = false;
         self.stopping = self.stream.is_some();
+    }
+
+    fn set_flavor(&mut self, flavor: Flavor) {
+        if self.settings.flavor == flavor {
+            return;
+        }
+        self.settings.flavor = flavor;
+        self.params.set_flavor(flavor);
+    }
+
+    /// Move `steps` through the stack, top to bottom. Clamps rather than wraps,
+    /// so holding Down does not cycle back to chocolate.
+    fn step_flavor(&mut self, steps: i32) {
+        if steps == 0 {
+            return;
+        }
+        let current = FLAVOR_STACK
+            .iter()
+            .position(|f| *f == self.settings.flavor)
+            .unwrap_or(0) as i32;
+        let next = (current + steps).clamp(0, FLAVOR_STACK.len() as i32 - 1) as usize;
+        self.set_flavor(FLAVOR_STACK[next]);
     }
 
     fn nudge_volume(&mut self, steps: i32) {
@@ -163,21 +235,37 @@ fn gain_for(volume: u32) -> f32 {
     volume as f32 / 100.0
 }
 
-fn apply_theme(ctx: &egui::Context) {
-    // The palette is a single brown scheme, so pin the theme rather than letting
-    // the OS pick light mode and half-apply it.
+/// Append Hack to the proportional family as a fallback.
+///
+/// egui bundles its own fonts and never consults the OS, so the glyph set is
+/// fixed at compile time. The proportional family is
+/// [Ubuntu-Light, NotoEmoji, emoji-icon-font], and none of those carry U+2190..93
+/// — arrows in proportional text render as tofu boxes. Hack does carry them and
+/// is already embedded, so adding it as a last resort costs nothing and makes
+/// arrows work in any text style.
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        family.push("Hack".to_owned());
+    }
+    ctx.set_fonts(fonts);
+}
+
+fn apply_theme(ctx: &egui::Context, p: &Palette) {
+    // Pin the theme: each flavor is a single deliberate scheme, so egui must not
+    // also apply its own light/dark choice on top.
     ctx.set_theme(egui::ThemePreference::Dark);
 
     ctx.all_styles_mut(|style| {
         let visuals = &mut style.visuals;
 
         visuals.dark_mode = true;
-        visuals.panel_fill = BG;
-        visuals.window_fill = BG;
-        visuals.extreme_bg_color = TROUGH;
-        visuals.override_text_color = Some(TEXT);
-        visuals.selection.bg_fill = ACCENT;
-        visuals.selection.stroke = egui::Stroke::new(1.0, LIT_TEXT);
+        visuals.panel_fill = p.bg;
+        visuals.window_fill = p.bg;
+        visuals.extreme_bg_color = p.trough;
+        visuals.override_text_color = Some(p.text);
+        visuals.selection.bg_fill = p.accent;
+        visuals.selection.stroke = egui::Stroke::new(1.0, p.lit_text);
 
         for widget in [
             &mut visuals.widgets.noninteractive,
@@ -187,18 +275,17 @@ fn apply_theme(ctx: &egui::Context) {
             &mut visuals.widgets.open,
         ] {
             widget.corner_radius = egui::CornerRadius::same(6);
-            widget.bg_fill = TROUGH;
-            widget.weak_bg_fill = BTN_BG;
-            widget.bg_stroke = egui::Stroke::new(1.0, BTN_BORDER);
-            widget.fg_stroke = egui::Stroke::new(1.0, BTN_TEXT);
+            widget.bg_fill = p.trough;
+            widget.weak_bg_fill = p.btn_bg;
+            widget.bg_stroke = egui::Stroke::new(1.0, p.btn_border);
+            widget.fg_stroke = egui::Stroke::new(1.0, p.btn_text);
         }
-        visuals.widgets.hovered.weak_bg_fill = BTN_HOVER;
-        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, LIT_BORDER);
-        visuals.widgets.active.weak_bg_fill = BTN_PRESSED;
-        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, LIT_BORDER);
-        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, TEXT);
+        visuals.widgets.hovered.weak_bg_fill = p.btn_hover;
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, p.lit_border);
+        visuals.widgets.active.weak_bg_fill = p.btn_pressed;
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, p.lit_border);
+        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, p.text);
 
-        // Keyboard focus has to be obvious, since Tab order is a headline feature.
         visuals.widgets.hovered.expansion = 0.0;
         visuals.widgets.active.expansion = 0.0;
 
@@ -208,18 +295,122 @@ fn apply_theme(ctx: &egui::Context) {
     });
 }
 
-fn toggle_button(ui: &mut egui::Ui, label: &str, lit: bool, size: egui::Vec2) -> egui::Response {
+fn toggle_button(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    label: &str,
+    lit: bool,
+    size: egui::Vec2,
+) -> egui::Response {
     let mut button = egui::Button::new(egui::RichText::new(label).size(12.0).strong())
         .min_size(size)
         .corner_radius(6);
     if lit {
-        button = button.fill(LIT_BG).stroke(egui::Stroke::new(1.0, LIT_BORDER));
+        button = button
+            .fill(p.lit_bg)
+            .stroke(egui::Stroke::new(1.0, p.lit_border));
     }
     ui.add(button)
 }
 
+/// The Neapolitan stack: three bands, chocolate on top, vanilla in the middle,
+/// strawberry on the bottom.
+///
+/// One widget and therefore one Tab stop. Click a band to pick it, or focus the
+/// stack and use Up/Down.
+fn flavor_picker(ui: &mut egui::Ui, p: &Palette, selected: Flavor) -> (egui::Response, i32) {
+    let (rect, mut response) = ui.allocate_exact_size(PICKER_SIZE, egui::Sense::click());
+
+    let mut steps = 0;
+    if response.has_focus() {
+        steps = ui.input_mut(|i| {
+            i.count_and_consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown) as i32
+                - i.count_and_consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp) as i32
+        });
+    }
+
+    let band_height = rect.height() / FLAVOR_STACK.len() as f32;
+    let mut clicked_flavor = None;
+
+    if response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let index = ((pos.y - rect.top()) / band_height).floor() as usize;
+            clicked_flavor = FLAVOR_STACK.get(index.min(FLAVOR_STACK.len() - 1)).copied();
+        }
+    }
+
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        for (index, flavor) in FLAVOR_STACK.iter().enumerate() {
+            let band = egui::Rect::from_min_size(
+                egui::pos2(rect.left(), rect.top() + band_height * index as f32),
+                egui::vec2(rect.width(), band_height),
+            );
+            let is_selected = *flavor == selected;
+            let mut color = palette::band_color(*flavor);
+            if !is_selected {
+                // Unselected scoops sit back rather than disappearing.
+                color = color.gamma_multiply(0.45);
+            }
+            painter.rect_filled(band, 0.0, color);
+        }
+
+        // Outer frame, plus a brighter ring when focused so the Tab stop is visible.
+        let stroke = if response.has_focus() {
+            egui::Stroke::new(2.0, p.lit_border)
+        } else {
+            egui::Stroke::new(1.0, p.btn_border)
+        };
+        painter.rect_stroke(
+            rect,
+            egui::CornerRadius::same(4),
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+
+        // Marker on the selected band.
+        let index = FLAVOR_STACK
+            .iter()
+            .position(|f| *f == selected)
+            .unwrap_or(0);
+        let band = egui::Rect::from_min_size(
+            egui::pos2(rect.left(), rect.top() + band_height * index as f32),
+            egui::vec2(rect.width(), band_height),
+        );
+        painter.rect_stroke(
+            band,
+            egui::CornerRadius::ZERO,
+            egui::Stroke::new(1.5, p.accent),
+            egui::StrokeKind::Inside,
+        );
+    }
+
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::RadioButton,
+            true,
+            true,
+            format!("flavor: {} ({})", selected.label(), selected.noise_name()),
+        )
+    });
+
+    if let Some(flavor) = clicked_flavor {
+        let current = FLAVOR_STACK.iter().position(|f| *f == selected).unwrap_or(0) as i32;
+        let target = FLAVOR_STACK.iter().position(|f| *f == flavor).unwrap_or(0) as i32;
+        steps = target - current;
+        response.mark_changed();
+    }
+
+    (response, steps)
+}
+
 impl eframe::App for Brownie {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.themed != Some(self.settings.flavor) {
+            self.themed = Some(self.settings.flavor);
+            apply_theme(ctx, self.palette());
+        }
+
         if !self.sized {
             self.sized = true;
             self.apply_window_size(ctx);
@@ -238,37 +429,44 @@ impl eframe::App for Brownie {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        // The number entry owns Up/Down while focused, so the help panel must not
-        // also grab those keys for scrolling.
-        let mut badge_focused = false;
+        let p = self.palette();
+        // The flavor picker and number entry both own Up/Down while focused, so
+        // the help panel must not also grab those keys for scrolling.
+        let mut arrows_claimed = false;
 
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(12, 10))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    // --- 1. mono / stereo ---------------------------------------
+                    // --- 1. flavor ----------------------------------------------
+                    let (picker, flavor_steps) = flavor_picker(ui, p, self.settings.flavor);
+                    arrows_claimed |= picker.has_focus();
+                    picker.on_hover_text(format!(
+                        "{} — {}\nclick a scoop, or Up/Down when focused",
+                        self.settings.flavor.label(),
+                        self.settings.flavor.noise_name()
+                    ));
+                    self.step_flavor(flavor_steps);
+
+                    // --- 2. mono / stereo ---------------------------------------
                     let mode_label = if self.settings.stereo {
                         "stereo"
                     } else {
                         "mono"
                     };
-                    let mode = toggle_button(
-                        ui,
-                        mode_label,
-                        self.settings.stereo,
-                        MODE_BUTTON_SIZE,
-                    )
-                    .on_hover_text(if self.settings.stereo {
-                        "stereo: each ear gets its own private rumble"
-                    } else {
-                        "mono: both ears, same rumble"
-                    });
+                    let mode =
+                        toggle_button(ui, p, mode_label, self.settings.stereo, MODE_BUTTON_SIZE)
+                            .on_hover_text(if self.settings.stereo {
+                                "stereo: each ear gets its own private rumble"
+                            } else {
+                                "mono: both ears, same rumble"
+                            });
                     if mode.clicked() {
                         self.settings.stereo = !self.settings.stereo;
                         self.params.set_stereo(self.settings.stereo);
                     }
 
-                    // --- 2. volume slider ---------------------------------------
+                    // --- 3. volume slider ---------------------------------------
                     let slider = ui
                         .add(
                             egui::Slider::new(&mut self.settings.volume, VOLUME_MIN..=VOLUME_MAX)
@@ -288,7 +486,7 @@ impl eframe::App for Brownie {
                         self.scroll_accum = 0.0;
                     }
 
-                    // --- 3. volume entry ----------------------------------------
+                    // --- 4. volume entry ----------------------------------------
                     // Own tab stop: click or focus it and type a number.
                     let badge = ui
                         .scope(|ui| {
@@ -298,9 +496,9 @@ impl eframe::App for Brownie {
                                 &mut widgets.hovered,
                                 &mut widgets.active,
                             ] {
-                                widget.weak_bg_fill = BADGE_BG;
-                                widget.bg_stroke = egui::Stroke::new(1.0, BADGE_BORDER);
-                                widget.fg_stroke = egui::Stroke::new(1.0, BADGE_TEXT);
+                                widget.weak_bg_fill = p.badge_bg;
+                                widget.bg_stroke = egui::Stroke::new(1.0, p.badge_border);
+                                widget.fg_stroke = egui::Stroke::new(1.0, p.badge_text);
                                 widget.corner_radius = egui::CornerRadius::same(4);
                             }
                             ui.add_sized(
@@ -312,15 +510,15 @@ impl eframe::App for Brownie {
                             .on_hover_text("type a number, 0 to 99")
                         })
                         .inner;
-                    badge_focused = badge.has_focus();
+                    arrows_claimed |= badge.has_focus();
 
                     if self.playing {
                         self.params.set_gain(gain_for(self.settings.volume));
                     }
 
-                    // --- 4. on / off --------------------------------------------
+                    // --- 5. on / off --------------------------------------------
                     let play_label = if self.playing { "ON" } else { "OFF" };
-                    let play = toggle_button(ui, play_label, self.playing, PLAY_BUTTON_SIZE)
+                    let play = toggle_button(ui, p, play_label, self.playing, PLAY_BUTTON_SIZE)
                         .on_hover_text("push button, makes noise");
                     if play.clicked() {
                         if self.playing {
@@ -330,8 +528,8 @@ impl eframe::App for Brownie {
                         }
                     }
 
-                    // --- 5. help ------------------------------------------------
-                    let help = toggle_button(ui, "?", self.help_open, HELP_BUTTON_SIZE)
+                    // --- 6. help ------------------------------------------------
+                    let help = toggle_button(ui, p, "?", self.help_open, HELP_BUTTON_SIZE)
                         .on_hover_text("what is all this then");
                     if help.clicked() {
                         self.toggle_help(&ctx);
@@ -339,12 +537,12 @@ impl eframe::App for Brownie {
                 });
 
                 if let Some(error) = &self.error {
-                    ui.label(egui::RichText::new(error).size(10.0).color(ERROR_TEXT));
+                    ui.label(egui::RichText::new(error).size(10.0).color(p.error));
                 }
 
                 if self.help_open {
                     ui.add_space(2.0);
-                    help_panel(ui, badge_focused);
+                    help_panel(ui, p, arrows_claimed);
                 }
             });
     }
@@ -354,20 +552,16 @@ impl eframe::App for Brownie {
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        BG.to_normalized_gamma_f32()
+        self.palette().bg.to_normalized_gamma_f32()
     }
 }
 
-/// Scroll step per Up/Down press, in points.
-const HELP_KEY_SCROLL: f32 = 24.0;
-const HELP_PAGE_SCROLL: f32 = 120.0;
-
-fn help_panel(ui: &mut egui::Ui, badge_focused: bool) {
+fn help_panel(ui: &mut egui::Ui, p: &Palette, arrows_claimed: bool) {
     ui.separator();
 
-    // Arrow keys scroll the help unless the number entry has focus and is using
-    // them. Mouse wheel and dragging the scrollbar always work.
-    let key_scroll = if badge_focused {
+    // Arrow keys scroll the help unless a focused control is already using them.
+    // Mouse wheel and dragging the scrollbar always work.
+    let key_scroll = if arrows_claimed {
         0.0
     } else {
         ui.input(|i| {
@@ -386,32 +580,59 @@ fn help_panel(ui: &mut egui::Ui, badge_focused: bool) {
                 // Negative delta scrolls the content up, i.e. moves the view down.
                 ui.scroll_with_delta(egui::vec2(0.0, -key_scroll));
             }
-            help_contents(ui);
+            help_contents(ui, p);
         });
 }
 
-fn help_contents(ui: &mut egui::Ui) {
+fn help_contents(ui: &mut egui::Ui, p: &Palette) {
     ui.label(
-        egui::RichText::new("Tasty brown noise.")
+        egui::RichText::new(HELP_TITLE)
             .size(13.0)
             .strong()
-            .color(LIT_TEXT),
+            .color(p.accent),
     );
+    ui.label(egui::RichText::new(HELP_BLURB).size(11.0));
+
+    ui.add_space(6.0);
     ui.label(
-        egui::RichText::new(
-            "Pairs well with noise-cancelling headphones. Push buttons, makes \
-             noise, either up or down. Minimal system usage — your fans will \
-             never find out.",
-        )
-        .size(11.0),
+        egui::RichText::new("THE SCOOPS")
+            .size(10.0)
+            .strong()
+            .color(p.accent),
     );
+    ui.add_space(2.0);
+
+    egui::Grid::new("help-flavors")
+        .num_columns(2)
+        .spacing(egui::vec2(12.0, 3.0))
+        .show(ui, |ui| {
+            for (flavor, blurb) in FLAVOR_BLURBS {
+                ui.horizontal(|ui| {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::CornerRadius::same(2),
+                        palette::band_color(flavor),
+                    );
+                    ui.label(
+                        egui::RichText::new(flavor.label())
+                            .size(11.0)
+                            .strong()
+                            .color(p.badge_text),
+                    );
+                });
+                ui.label(egui::RichText::new(blurb).size(11.0));
+                ui.end_row();
+            }
+        });
 
     ui.add_space(6.0);
     ui.label(
         egui::RichText::new("KNOBS AND LEVERS")
             .size(10.0)
             .strong()
-            .color(ACCENT),
+            .color(p.accent),
     );
     ui.add_space(2.0);
 
@@ -419,21 +640,14 @@ fn help_contents(ui: &mut egui::Ui) {
         .num_columns(2)
         .spacing(egui::vec2(12.0, 3.0))
         .show(ui, |ui| {
-            for (keys, what) in [
-                ("Tab", "walk the controls, left to right"),
-                ("Space / Enter", "flip whichever button is focused"),
-                ("← →", "nudge the slider by one"),
-                ("Scroll wheel", "the same, but lazier"),
-                ("↑ ↓", "nudge the number box by one"),
-                ("Click the number", "type an exact 0–99"),
-                ("mono", "both ears get the same rumble"),
-                ("stereo", "each ear gets its own private rumble"),
-            ] {
+            for (keys, what) in KEY_HELP {
+                // Monospace: keycaps line up, and Hack is the bundled font that
+                // actually carries the arrow glyphs.
                 ui.label(
                     egui::RichText::new(keys)
                         .size(11.0)
-                        .strong()
-                        .color(BADGE_TEXT),
+                        .monospace()
+                        .color(p.badge_text),
                 );
                 ui.label(egui::RichText::new(what).size(11.0));
                 ui.end_row();
@@ -442,9 +656,64 @@ fn help_contents(ui: &mut egui::Ui) {
 
     ui.add_space(6.0);
     ui.label(
-        egui::RichText::new("Not a medical device. Will not cancel your coworkers.")
+        egui::RichText::new(HELP_FOOTER)
             .size(10.0)
             .italics()
-            .color(BTN_TEXT),
+            .color(p.btn_text),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// egui bundles its fonts and never falls back to the OS, so any codepoint
+    /// outside what those four files cover renders as an empty box. Keep help copy
+    /// to ASCII plus the handful of glyphs verified present.
+    #[test]
+    fn help_copy_uses_available_glyphs() {
+        let mut copy: Vec<&str> = vec![HELP_TITLE, HELP_BLURB, HELP_FOOTER];
+        copy.extend(FLAVOR_BLURBS.iter().map(|(_, blurb)| *blurb));
+        for (keys, what) in KEY_HELP {
+            copy.push(keys);
+            copy.push(what);
+        }
+
+        for text in copy {
+            for ch in text.chars() {
+                assert!(
+                    ch.is_ascii() || SAFE_NON_ASCII.contains(&ch),
+                    "{ch:?} in {text:?} is not in a bundled font and will render \
+                     as a box; add it to SAFE_NON_ASCII only after verifying coverage"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn flavor_stack_is_the_ice_cream_order() {
+        assert_eq!(
+            FLAVOR_STACK,
+            [Flavor::Chocolate, Flavor::Vanilla, Flavor::Strawberry],
+            "chocolate on top, vanilla in the middle, strawberry on the bottom"
+        );
+    }
+
+    #[test]
+    fn every_flavor_appears_once_in_the_stack_and_the_help() {
+        for flavor in Flavor::ALL {
+            assert_eq!(
+                FLAVOR_STACK.iter().filter(|f| **f == flavor).count(),
+                1,
+                "{} missing from or duplicated in FLAVOR_STACK",
+                flavor.label()
+            );
+            assert_eq!(
+                FLAVOR_BLURBS.iter().filter(|(f, _)| *f == flavor).count(),
+                1,
+                "{} missing from or duplicated in FLAVOR_BLURBS",
+                flavor.label()
+            );
+        }
+    }
 }
