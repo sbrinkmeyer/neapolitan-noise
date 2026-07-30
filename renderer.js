@@ -60,8 +60,42 @@ const playBtn = document.getElementById('play-btn')
 const modeBtn = document.getElementById('mode-btn')
 const volumeInput = document.getElementById('volume')
 const volumeValue = document.getElementById('volume-value')
+const SETTINGS_STORAGE_KEY = 'brownie.settings.v1'
 
 let stereoEnabled = false
+
+function loadSavedSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+
+    const hasStereo = typeof parsed.stereoEnabled === 'boolean'
+    const parsedVolume = Number.parseInt(parsed.volume, 10)
+    const hasVolume = Number.isFinite(parsedVolume)
+
+    if (!hasStereo && !hasVolume) return null
+
+    return {
+      stereoEnabled: hasStereo ? parsed.stereoEnabled : false,
+      volume: hasVolume ? clampVolume(parsedVolume) : 30
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveCurrentSettings() {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      stereoEnabled,
+      volume: getVolumeValue()
+    }))
+  } catch {
+    // Ignore storage errors; audio still works without persistence.
+  }
+}
 
 function clampVolume(v) {
   return Math.max(1, Math.min(99, v))
@@ -124,12 +158,14 @@ function sendSettings() {
 
 playBtn.addEventListener('click', async () => {
   if (playing) {
+    saveCurrentSettings()
     stop()
     playing = false
     renderPlayButton()
     return
   }
 
+  saveCurrentSettings()
   await start()
   playing = true
   renderPlayButton()
@@ -156,6 +192,16 @@ modeBtn.addEventListener('click', () => {
   sendSettings()
 })
 
-setVolumeValue(getVolumeValue())
+window.addEventListener('beforeunload', () => {
+  saveCurrentSettings()
+})
+
+const savedSettings = loadSavedSettings()
+if (savedSettings) {
+  stereoEnabled = savedSettings.stereoEnabled
+  setVolumeValue(savedSettings.volume)
+} else {
+  setVolumeValue(getVolumeValue())
+}
 renderModeButton()
 renderPlayButton()
