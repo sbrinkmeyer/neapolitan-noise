@@ -1,84 +1,135 @@
-# Brownie 2.0
+# Brownie 3.0
 
-Brownie 2.0 is a compact Electron brown-noise generator with a thin single-row interface.
+A compact brown-noise generator with a thin single-row interface. Native, no
+runtime to install: one self-contained binary per platform.
+
+Brownie 3.0 is a Rust rewrite (`native/`) of the Electron app that came before
+it. Same filter, same palette, 4 MB instead of 264 MB.
 
 ## Features
 
 - Stereo/Mono mode button
   - Lit: stereo (independent L/R channels)
   - Dim: mono (dual-mono output)
-- Center volume slider (1-99)
-  - Drag thumb to adjust level
-  - Mouse wheel over slider to step volume up/down
+- Volume slider (0-99)
+  - Drag the thumb, or scroll the mouse wheel over it
+  - Left/Right arrows when focused
+- Volume number entry
+  - Click and type an exact value; Up/Down arrows when focused
 - Playback button
   - Lit ON: noise playing
   - Dim OFF: stopped
+- Help panel behind `?`
+- Settings (volume, mono/stereo) persist between runs
 
-## Requirements
+Keyboard: Tab walks the controls left to right, Space or Enter flips the focused
+button.
 
-- Node.js 20+
-- npm
+## Downloads
 
-## Install
+Grab an installer from [Releases](https://github.com/sbrinkmeyer/brownie-sauce/releases):
+
+| Platform | Asset |
+| --- | --- |
+| macOS 11+ (Apple Silicon and Intel) | `.dmg` (universal binary) |
+| Windows 10+ x64 | `.exe` |
+| Linux x86_64, glibc 2.35+ | `.AppImage` |
+
+Builds are unsigned. See [macOS Gatekeeper](#macos-gatekeeper-unsigned-build)
+below.
+
+## Build from source
+
+Requires a [Rust](https://rustup.rs) toolchain. No other tooling on macOS or
+Windows.
 
 ```bash
-npm install
+cargo build --release --manifest-path native/Cargo.toml
+cargo test --release --manifest-path native/Cargo.toml
+./native/target/release/brownie
 ```
 
-## Run (Dev)
+On Linux, install the audio and windowing headers first:
 
 ```bash
-npm start
+sudo apt-get install -y pkg-config libasound2-dev libgl1-mesa-dev \
+  libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+  libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+  libxcursor-dev libxrandr-dev libxi-dev
 ```
 
-## Build Installers
+## Build installers
 
-### Local build commands
+Locally, for the platform you are on:
 
 ```bash
-npm run dist:mac:x64
-npm run dist:mac:arm64
-npm run dist:win:x64
-npm run dist:linux:appimage
+# macOS: .app bundle + DMG, named for the architectures it contains
+bash packaging/macos/bundle.sh native/target/release/brownie 3.0.0 dist-native
+
+# Linux: AppImage
+bash packaging/linux/appimage.sh native/target/release/brownie 3.0.0 dist-native
 ```
 
-Output files are written to the dist/ directory.
+Cross-compiling these is more trouble than it is worth; CI does it instead.
 
-### CI workflow (recommended)
+### Releases via CI
 
-A GitHub Actions workflow exists at .github/workflows/build-installers.yml to build:
+`.github/workflows/native-release.yml` builds all three platforms in parallel,
+each on its own runner OS:
 
-- macOS DMG (x64, arm64)
-- Windows NSIS installer (x64)
-- Linux AppImage (x64)
+- macOS runner: arm64 + x64, fused into one universal binary with `lipo`, then
+  bundled and ad-hoc signed
+- Windows runner: single portable `.exe` with an embedded icon
+- Linux runner (ubuntu-22.04, pinned to keep the glibc floor low): AppImage
 
-Trigger it from GitHub Actions using "Build Installers" and download artifacts from the run.
+Push a tag to publish:
 
-## Project Structure
+```bash
+git tag v3.0.0 && git push origin v3.0.0
+```
 
-- main.js: Electron main process/window config
-- index.html: UI layout + styles
-- renderer.js: audio logic, UI behavior, audio worklet source
-- tutorial.md: conceptual noise-generation tutorial notes
+A release is created with all artifacts attached. Opening a PR that touches
+`native/` or `packaging/` runs the same three builds without publishing.
 
-## Notes
+## Project structure
 
-- Unsigned macOS/Windows artifacts may show OS warnings until code signing/notarization is configured.
-- Linux AppImage is distro-agnostic for most modern distributions.
+- `native/src/noise.rs`: brown-noise DSP, with tests
+- `native/src/audio.rs`: cpal output stream, gain ramping
+- `native/src/app.rs`: UI, theme, persistence
+- `native/src/main.rs`: window setup
+- `packaging/`: per-platform bundling scripts
+- `tutorial.md`: conceptual noise-generation notes
+- `brownie.py`: the original Python/tkinter prototype
+- `main.js`, `index.html`, `renderer.js`: the Electron 2.0 app, kept for
+  reference. Its workflow (`build-installers.yml`) is now manual-only.
 
-## macOS Gatekeeper (Unsigned Build)
+## Notes on the port
 
-If macOS blocks launch with a message like "cannot be opened because the developer cannot be verified", use one of these options.
+Three things changed from the Electron implementation on purpose:
 
-Only do this for builds you trust.
+- **White-noise source.** The originals drew Gaussian samples via Box-Muller
+  (two RNG calls, a `ln` and a `cos` per sample). After the low-pass the input
+  distribution is inaudible, so a xorshift uniform scaled to unit variance does
+  the same job far more cheaply. Output level is unchanged.
+- **Sample-rate-independent filter.** `alpha = 0.995` was tuned for 44.1 kHz. It
+  is now rescaled to the device's actual rate so the corner frequency stays at
+  ~35 Hz at 48 kHz and above.
+- **Gain ramping.** Volume changes glide over 25 ms instead of jumping per
+  buffer, which removes the zipper noise on the slider and the click on
+  start/stop.
+
+## macOS Gatekeeper (unsigned build)
+
+Builds are ad-hoc signed but not notarized, so macOS will say the developer
+cannot be verified. Only do this for builds you trust.
 
 ### Option 1: Finder (recommended)
 
 1. Move the app to Applications.
-2. In Finder, right-click the app and choose Open.
+2. Right-click the app and choose Open.
 3. Click Open again in the confirmation dialog.
 
-After the first successful launch, macOS should allow normal double-click opening.
+After the first successful launch, macOS allows normal double-click opening.
 
 ### Option 2: Terminal (remove quarantine flag)
 
@@ -86,4 +137,7 @@ After the first successful launch, macOS should allow normal double-click openin
 xattr -dr com.apple.quarantine /Applications/Brownie.app
 ```
 
-Then launch the app normally.
+## Windows SmartScreen (unsigned build)
+
+SmartScreen may show "Windows protected your PC". Choose More info, then Run
+anyway.

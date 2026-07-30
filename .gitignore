@@ -5,6 +5,10 @@ node_modules/
 dist/
 out/
 release/
+dist-native/
+
+# Rust
+native/target/
 
 # Python local environment (if present)
 venv/
